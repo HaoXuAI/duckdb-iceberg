@@ -13,6 +13,10 @@
 
 namespace duckdb {
 
+// Static member definitions — shared across all SIGV4Authorization instances
+std::mutex SIGV4Authorization::refresh_mutex;
+std::chrono::steady_clock::time_point SIGV4Authorization::last_refresh_time;
+
 namespace {
 
 //! Detect the scheme from a host string, defaulting to HTTPS

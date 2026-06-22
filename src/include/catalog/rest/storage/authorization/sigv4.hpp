@@ -38,10 +38,12 @@ public:
 	string sigv4_region;
 
 private:
-	//! Guards concurrent secret refresh attempts — only one thread may refresh at a time
-	std::mutex refresh_mutex;
-	//! Time of last successful refresh; used to avoid refreshing on every request
-	std::chrono::steady_clock::time_point last_refresh_time;
+	//! Guards concurrent secret refresh attempts across ALL SIGV4Authorization instances.
+	//! Must be static because multiple attached catalogs share the same aws_secret name —
+	//! per-instance mutex allows concurrent CreateSecret calls that trigger write-write conflicts.
+	static std::mutex refresh_mutex;
+	//! Time of last successful refresh (shared across instances for the same reason)
+	static std::chrono::steady_clock::time_point last_refresh_time;
 	//! Minimum interval between refresh attempts (seconds). STS tokens last 900s minimum;
 	//! refreshing every 300s gives comfortable headroom while avoiding the race.
 	static constexpr int REFRESH_INTERVAL_SECONDS = 300;
