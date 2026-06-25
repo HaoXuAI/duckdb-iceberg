@@ -183,7 +183,11 @@ void SIGV4Authorization::MaybeRefreshSecret(ClientContext &context) {
 		last_refresh_time = std::chrono::steady_clock::now();
 	} catch (std::exception &e) {
 		// Refresh failed — continue with existing credentials.
-		// Don't update last_refresh_time so we retry on the next request.
+		// Update last_refresh_time to back off for REFRESH_INTERVAL_SECONDS.
+		// Without this, the next request immediately retries, hits the same error
+		// (secret may be in a corrupted/locked state), and cascades into permanent
+		// failure until pod restart.
+		last_refresh_time = std::chrono::steady_clock::now();
 	}
 }
 

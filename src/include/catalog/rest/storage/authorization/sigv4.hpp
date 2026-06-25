@@ -37,12 +37,19 @@ public:
 	//! Optional: override the AWS region used for SigV4 signing, useful for non-AWS endpoints
 	string sigv4_region;
 
+public:
+	//! Accessors for the shared refresh mutex and timestamp — used by TryRefreshCatalogSecret
+	//! (in iceberg_table_information.cpp) which also calls CreateSecret on the same aws_secret.
+	//! Both code paths must share the same mutex to prevent write-write conflicts.
+	static std::mutex &GetRefreshMutex() { return refresh_mutex; }
+	static std::chrono::steady_clock::time_point &GetLastRefreshTime() { return last_refresh_time; }
+
 private:
-	//! Guards concurrent secret refresh attempts across ALL SIGV4Authorization instances.
-	//! Must be static because multiple attached catalogs share the same aws_secret name —
-	//! per-instance mutex allows concurrent CreateSecret calls that trigger write-write conflicts.
+	//! Guards concurrent secret refresh attempts across ALL code paths that call CreateSecret
+	//! on aws_secret: SIGV4Authorization::MaybeRefreshSecret AND TryRefreshCatalogSecret.
+	//! Must be static because multiple attached catalogs share the same aws_secret name.
 	static std::mutex refresh_mutex;
-	//! Time of last successful refresh (shared across instances for the same reason)
+	//! Time of last successful refresh (shared across all refresh paths)
 	static std::chrono::steady_clock::time_point last_refresh_time;
 	//! Minimum interval between refresh attempts (seconds). STS tokens last 900s minimum;
 	//! refreshing every 300s gives comfortable headroom while avoiding the race.

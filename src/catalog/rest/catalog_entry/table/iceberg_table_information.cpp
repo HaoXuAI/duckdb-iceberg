@@ -18,6 +18,7 @@
 #include "catalog/rest/storage/authorization/oauth2.hpp"
 #include "catalog/rest/storage/authorization/sigv4.hpp"
 #include "catalog/rest/storage/authorization/none.hpp"
+#include "catalog/rest/storage/authorization/sigv4.hpp"
 #include "catalog/rest/storage/authorization/sigv4_utils.hpp"
 #include "core/expression/iceberg_transform.hpp"
 #include "duckdb/parser/column_definition.hpp"
@@ -31,11 +32,14 @@ namespace duckdb {
 //! Attempt to refresh the catalog's storage secret if it supports auto-refresh.
 //! Rebuilds the secret via its original provider (e.g., web_identity/sts credential chain)
 //! which fetches fresh STS tokens. No-op if the secret lacks refresh_info.
-//! Serialized with a mutex + time gate to prevent write-write conflicts when multiple
-//! concurrent queries trigger this path simultaneously.
+//! Uses SIGV4Authorization's shared mutex + time gate to prevent write-write conflicts
+//! across all code paths that call CreateSecret on the same aws_secret.
 static bool TryRefreshCatalogSecret(ClientContext &context, const SecretEntry &secret_entry) {
-	static std::mutex refresh_mutex;
-	static std::chrono::steady_clock::time_point last_refresh_time;
+	// Use the shared mutex from SIGV4Authorization — both this function and
+	// MaybeRefreshSecret can race on the same secret name (aws_secret).
+	// Separate mutexes allowed both to enter CreateSecret simultaneously.
+	auto &refresh_mutex = SIGV4Authorization::GetRefreshMutex();
+	auto &last_refresh_time = SIGV4Authorization::GetLastRefreshTime();
 	static constexpr int REFRESH_INTERVAL_SECONDS = 300;
 
 	// Fast path: if we refreshed recently, skip
